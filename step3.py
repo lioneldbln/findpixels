@@ -7,40 +7,34 @@ os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
  
 img = Image.open("test.bmp")
 imgArray = np.asarray(img).astype(np.uint8)
-dimImgArray = imgArray.shape
-sumRgbArrayRes = np.zeros((dimImgArray[0], dimImgArray[1]),np.int32)
+sumRgbArrayRes = np.zeros((imgArray.shape[0], imgArray.shape[1]),np.int32)
  
 ctx = cl.create_some_context()
 queue = cl.CommandQueue(ctx)
  
 mf = cl.mem_flags
 imgArray_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=imgArray)
-sumRGBArrayRes_buf = cl.Buffer(ctx, mf.WRITE_ONLY, sumRgbArrayRes.nbytes)
+sumRGBArrayRes_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=sumRgbArrayRes)
  
 prg = cl.Program(ctx, """
-    __kernel void sumRGB(__global const uchar *imgArray, __global int *sumRGBArrayRes)
+    __kernel void sumRGB(__global const uchar *imgArray, __global int *sumRGBArrayRes, uint ncols, uint npix)
     {
       int rowid = get_global_id(0);
       int colid = get_global_id(1);
-
-		int ncols = %d;
-		int npix = %d; //number of pixels, 3 for RGB 4 for RGBA
 
 		int index = rowid * ncols * npix + colid * npix;
 		int indexRes = rowid * ncols + colid;
 		sumRGBArrayRes[indexRes] = imgArray[index + 0] + imgArray[index + 1] + imgArray[index + 2];
     }
-    """ % (dimImgArray[1], dimImgArray[2])).build()
+    """).build()
  
-prg.sumRGB(queue, (dimImgArray[0], dimImgArray[1]), None, imgArray_buf, sumRGBArrayRes_buf)
+prg.sumRGB(queue, imgArray.shape, None, imgArray_buf, sumRGBArrayRes_buf, np.uint32(imgArray.shape[1]), np.uint32(imgArray.shape[2]))
  
 cl.enqueue_copy(queue, sumRgbArrayRes, sumRGBArrayRes_buf)
  
 print imgArray
 print "--------------------------------------------------"
 print sumRgbArrayRes
-
-dimSumRgbArrayRes = sumRgbArrayRes.shape
 
 brightestPixel = np.zeros((1, 2), np.int32)
 brightestValue = np.zeros((1), np.int32)
@@ -64,12 +58,10 @@ darkestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=dark
 darkestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestValue)
 
 prg = cl.Program(ctx, """
-    __kernel void find(__global const int *imgArray, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel)
+    __kernel void find(__global const int *imgArray, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel, uint ncols)
     {
 			int rowid = get_global_id(0);
 			int colid = get_global_id(1);
-
-			int ncols = %d;
 
 			int index = rowid * ncols + colid;
 
@@ -87,10 +79,9 @@ prg = cl.Program(ctx, """
 				darkestPixel[1] = colid;
 			}
     }
-    """ % (dimSumRgbArrayRes[1])).build()
+    """).build()
 
-prg.find(queue, (dimSumRgbArrayRes[0], dimSumRgbArrayRes[1]), None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf)
-
+prg.find(queue, sumRgbArrayRes.shape, None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf, np.uint32(sumRgbArrayRes.shape[1]))
 
 cl.enqueue_copy(queue, brightestPixel, brightestpixel_buf)
 cl.enqueue_copy(queue, brightestValue, brightestvalue_buf)
