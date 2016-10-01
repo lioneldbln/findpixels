@@ -6,20 +6,19 @@ import Image
 os.environ['PYOPENCL_COMPILER_OUTPUT'] = '1'
  
 img = Image.open("test.bmp")
-a = np.asarray(img).astype(np.uint8)
-dim = a.shape
-res = np.zeros((dim[0], dim[1]),np.int32)
-print res.nbytes
+imgArray = np.asarray(img).astype(np.uint8)
+dimImgArray = imgArray.shape
+sumRgbArrayRes = np.zeros((dimImgArray[0], dimImgArray[1]),np.int32)
  
 ctx = cl.create_some_context()
 queue = cl.CommandQueue(ctx)
  
 mf = cl.mem_flags
-a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a)
-dest_buf = cl.Buffer(ctx, mf.WRITE_ONLY, res.nbytes)
+imgArray_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=imgArray)
+sumRGBArrayRes_buf = cl.Buffer(ctx, mf.WRITE_ONLY, sumRgbArrayRes.nbytes)
  
 prg = cl.Program(ctx, """
-    __kernel void copy(__global const uchar *a, __global int *c)
+    __kernel void sumRGB(__global const uchar *imgArray, __global int *sumRGBArrayRes)
     {
       int rowid = get_global_id(0);
       int colid = get_global_id(1);
@@ -28,44 +27,44 @@ prg = cl.Program(ctx, """
 		int npix = %d; //number of pixels, 3 for RGB 4 for RGBA
 
 		int index = rowid * ncols * npix + colid * npix;
-		int cindex = rowid * ncols + colid;
-		c[cindex] = a[index + 0] + a[index + 1] + a[index + 2];
+		int indexRes = rowid * ncols + colid;
+		sumRGBArrayRes[indexRes] = imgArray[index + 0] + imgArray[index + 1] + imgArray[index + 2];
     }
-    """ % (dim[1], dim[2])).build()
+    """ % (dimImgArray[1], dimImgArray[2])).build()
  
-prg.copy(queue, (dim[0], dim[1]), None, a_buf, dest_buf)
+prg.sumRGB(queue, (dimImgArray[0], dimImgArray[1]), None, imgArray_buf, sumRGBArrayRes_buf)
  
-cl.enqueue_copy(queue, res, dest_buf)
+cl.enqueue_copy(queue, sumRgbArrayRes, sumRGBArrayRes_buf)
  
-print a
+print imgArray
 print "--------------------------------------------------"
-print res
+print sumRgbArrayRes
 
-dim = res.shape
+dimSumRgbArrayRes = sumRgbArrayRes.shape
 
-brightestpixel = np.zeros((1, 2), np.int32)
-brightestvalue = np.zeros((1), np.int32)
+brightestPixel = np.zeros((1, 2), np.int32)
+brightestValue = np.zeros((1), np.int32)
 
-darkestpixel = np.zeros((1, 2), np.int32)
-darkestvalue = np.zeros((1), np.int32)
+darkestPixel = np.zeros((1, 2), np.int32)
+darkestValue = np.zeros((1), np.int32)
 
-brightestvalue[0] = 150;
-darkestvalue[0] = 88;
+brightestValue[0] = 150;
+darkestValue[0] = 88;
 
-print "before: ", brightestvalue
-print "before: ", darkestvalue
+print "before: ", brightestValue
+print "before: ", darkestValue
 
 mf = cl.mem_flags
-a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=res)
+a_buf = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=sumRgbArrayRes)
 
-brightestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=brightestpixel)
-brightestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=brightestvalue)
+brightestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=brightestPixel)
+brightestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=brightestValue)
 
-darkestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestpixel)
-darkestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestvalue)
+darkestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestPixel)
+darkestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestValue)
 
 prg = cl.Program(ctx, """
-    __kernel void find(__global const int *a, __global int *brightestvalue, __global int *darkestvalue, __global int *brightestpixel, __global int *darkestpixel)
+    __kernel void find(__global const int *imgArray, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel)
     {
 			int rowid = get_global_id(0);
 			int colid = get_global_id(1);
@@ -74,34 +73,34 @@ prg = cl.Program(ctx, """
 
 			int index = rowid * ncols + colid;
 
-			if(a[index] > brightestvalue[0])
+			if(imgArray[index] > brightestValue[0])
 			{
-				brightestvalue[0] = a[index];
-				brightestpixel[0] = rowid;
-				brightestpixel[1] = colid;
+				brightestValue[0] = imgArray[index];
+				brightestPixel[0] = rowid;
+				brightestPixel[1] = colid;
 			}
 
-			if(a[index] < darkestvalue[0])
+			if(imgArray[index] < darkestValue[0])
 			{
-				darkestvalue[0] = a[index];
-				darkestpixel[0] = rowid;
-				darkestpixel[1] = colid;
+				darkestValue[0] = imgArray[index];
+				darkestPixel[0] = rowid;
+				darkestPixel[1] = colid;
 			}
     }
-    """ % (dim[1])).build()
+    """ % (dimSumRgbArrayRes[1])).build()
 
-prg.find(queue, (dim[0], dim[1]), None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf)
+prg.find(queue, (dimSumRgbArrayRes[0], dimSumRgbArrayRes[1]), None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf)
 
 
-cl.enqueue_copy(queue, brightestpixel, brightestpixel_buf)
-cl.enqueue_copy(queue, brightestvalue, brightestvalue_buf)
+cl.enqueue_copy(queue, brightestPixel, brightestpixel_buf)
+cl.enqueue_copy(queue, brightestValue, brightestvalue_buf)
 
-cl.enqueue_copy(queue, darkestpixel, darkestpixel_buf)
-cl.enqueue_copy(queue, darkestvalue, darkestvalue_buf)
+cl.enqueue_copy(queue, darkestPixel, darkestpixel_buf)
+cl.enqueue_copy(queue, darkestValue, darkestvalue_buf)
 
 print "--------------------------------------------------"
-print "brightestpixel: ", brightestpixel
-print "brightestvalue: ", brightestvalue
+print "brightestPixel: ", brightestPixel
+print "brightestValue: ", brightestValue
 
-print "darkestpixel: ", darkestpixel
-print "darkestvalue: ", darkestvalue
+print "darkestPixel: ", darkestPixel
+print "darkestValue: ", darkestValue
