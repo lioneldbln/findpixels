@@ -43,10 +43,12 @@ def Do(ctx, queue, img):
 
 	darkestpixel_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestPixel)
 	darkestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestValue)
+	
+	local_Pixels = cl.LocalMemory(4)
 
 	prg = cl.Program(ctx, """
-		__kernel void find(__global const int *sumRgbArrayRes, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel, uint ncols)
-		{
+		__kernel void find(__global const int *sumRgbArrayRes, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel, uint ncols, __local int *local_Pixels)
+		{				
 				int rowid = get_global_id(0);
 				int colid = get_global_id(1);
 
@@ -55,20 +57,26 @@ def Do(ctx, queue, img):
 				if(sumRgbArrayRes[index] > brightestValue[0])
 				{
 					brightestValue[0] = sumRgbArrayRes[index];
-					brightestPixel[0] = rowid;
-					brightestPixel[1] = colid;
+					local_Pixels[0] = rowid;
+					local_Pixels[1] = colid;
 				}
 
 				if(sumRgbArrayRes[index] < darkestValue[0])
 				{
 					darkestValue[0] = sumRgbArrayRes[index];
-					darkestPixel[0] = rowid;
-					darkestPixel[1] = colid;
+					local_Pixels[2] = rowid;
+					local_Pixels[3] = colid;
 				}
+				
+				barrier(CLK_GLOBAL_MEM_FENCE);
+				brightestPixel[0] = local_Pixels[0];
+				brightestPixel[1] = local_Pixels[1];
+				darkestPixel[0] = local_Pixels[2];
+				darkestPixel[1] = local_Pixels[3];
 		}
 		""").build()
 
-	prg.find(queue, sumRgbArrayRes.shape, None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf, np.uint32(sumRgbArrayRes.shape[1]))
+	prg.find(queue, sumRgbArrayRes.shape, None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf, np.uint32(sumRgbArrayRes.shape[1]), local_Pixels)
 
 	cl.enqueue_copy(queue, brightestPixel, brightestpixel_buf)
 	cl.enqueue_copy(queue, brightestValue, brightestvalue_buf)
@@ -87,4 +95,4 @@ def Find(ctx, queue, img):
 	time1 = time()
 	Do(ctx, queue, img)
 	time2 = time()
-	print "Execution time of step1: ", time2 - time1, "s"
+	print "Execution time of step2: ", time2 - time1, "s"
