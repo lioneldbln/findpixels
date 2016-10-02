@@ -15,8 +15,8 @@ def Do(ctx, queue, file):
 	prg = cl.Program(ctx, """
 		__kernel void sumRGB(__global const uchar *imgArray, __global int *sumRgbArray, uint ncols, uint npix)
 		{
-		  int rowid = get_global_id(0);
-		  int colid = get_global_id(1);
+			int rowid = get_global_id(0);
+			int colid = get_global_id(1);
 
 			int index = rowid * ncols * npix + colid * npix;
 			int indexRes = rowid * ncols + colid;
@@ -47,30 +47,30 @@ def Do(ctx, queue, file):
 	darkestvalue_buf = cl.Buffer(ctx, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=darkestValue)
 
 	prg = cl.Program(ctx, """
-		__kernel void find(__global const int *sumRgbArray, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel, uint ncols)
+		__kernel void findMinMax(__global const int *sumRgbArray, __global int *brightestValue, __global int *darkestValue, __global int *brightestPixel, __global int *darkestPixel, uint ncols)
 		{
-				int rowid = get_global_id(0);
-				int colid = get_global_id(1);
+			int rowid = get_global_id(0);
+			int colid = get_global_id(1);
 
-				int index = rowid * ncols + colid;
+			int index = rowid * ncols + colid;
 
-				if(sumRgbArray[index] > brightestValue[0])
-				{
-					brightestValue[0] = sumRgbArray[index];
-					brightestPixel[0] = rowid;
-					brightestPixel[1] = colid;
-				}
+			if(sumRgbArray[index] > brightestValue[0])
+			{
+				brightestValue[0] = sumRgbArray[index];
+				brightestPixel[0] = rowid;
+				brightestPixel[1] = colid;
+			}
 
-				if(sumRgbArray[index] < darkestValue[0])
-				{
-					darkestValue[0] = sumRgbArray[index];
-					darkestPixel[0] = rowid;
-					darkestPixel[1] = colid;
+			if(sumRgbArray[index] < darkestValue[0])
+			{
+				darkestValue[0] = sumRgbArray[index];
+				darkestPixel[0] = rowid;
+				darkestPixel[1] = colid;
 				}
 		}
 		""").build()
 
-	prg.find(queue, sumRgbArray.shape, None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf, np.uint32(sumRgbArray.shape[1]))
+	prg.findMinMax(queue, sumRgbArray.shape, None, a_buf, brightestvalue_buf, darkestvalue_buf, brightestpixel_buf, darkestpixel_buf, np.uint32(sumRgbArray.shape[1]))
 
 	cl.enqueue_copy(queue, brightestPixel, brightestpixel_buf)
 	cl.enqueue_copy(queue, brightestValue, brightestvalue_buf)
@@ -85,7 +85,7 @@ def Do(ctx, queue, file):
 	print "---------------------------------------------------------------"
 	print "Darkest pixel at:", darkestPixel, "with the value:", imgArray[darkestPixel[0][0]][darkestPixel[0][1]]
 	
-def FindBrightessdarkestPixel(ctx, queue, file):
+def FindBrightestdarkestPixel(ctx, queue, file):
 	time1 = time()
 	Do(ctx, queue, file)
 	time2 = time()
