@@ -1,0 +1,4 @@
+Find the first brightest and darkest pixel of an image using OpenCL
+
+To launch the program, use the following command (specified the file as the first argument):
+	python main.py wild.jpg
